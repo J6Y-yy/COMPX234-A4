@@ -3,6 +3,8 @@ import java.net.*;
 import java.util.Base64;
 
 public class UDPClient {
+    private static final int MAX_RETRIES = 5;
+    private static final int INITIAL_TIMEOUT = 1000; // 1 second
     private static final int MAX_PACKET_SIZE = 65535;
 
     public static void main(String[] args) {
@@ -36,15 +38,11 @@ public class UDPClient {
         try {
             // Send DOWNLOAD request
             String request = "DOWNLOAD " + filename;
-            byte[] sendData = request.getBytes();
-            DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
-            socket.send(sendPacket);
-
-            // Receive response
-            byte[] receiveData = new byte[MAX_PACKET_SIZE];
-            DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-            socket.receive(receivePacket);
-            String response = new String(receivePacket.getData(), 0, receivePacket.getLength());
+            String response = sendAndReceive(socket, request, serverAddress, port, INITIAL_TIMEOUT);
+            if (response == null) {
+                System.err.println("Failed to receive response for DOWNLOAD request");
+                return;
+            }
 
             // Parse response
             String[] parts = response.split(" ");
@@ -67,15 +65,13 @@ public class UDPClient {
                 while (start <= end) {
                     // Request data chunk
                     String blockRequest = "FILE " + filename + " GET START " + start + " END " + end;
-                    sendData = blockRequest.getBytes();
-                    sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
-                    socket.send(sendPacket);
+                    String blockResponse = sendAndReceive(socket, blockRequest, serverAddress, port, INITIAL_TIMEOUT);
+                    if (blockResponse == null) {
+                        System.err.println("Failed to receive response for data block request");
+                        continue;
+                    }
 
-                    // Receive data chunk
-                    socket.receive(receivePacket);
-                    String blockResponse = new String(receivePacket.getData(), 0, receivePacket.getLength());
-
-                    // Parse data chunk response
+                    // Parse data block response
                     String[] blockParts = blockResponse.split(" ");
                     if (blockParts[0].equals("FILE") && blockParts[1].equals(filename) && blockParts[2].equals("OK")) {
                         int dataIndex = 0;
@@ -115,5 +111,30 @@ public class UDPClient {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static String sendAndReceive(DatagramSocket socket, String message, InetAddress address, int port, int initialTimeout) throws IOException {
+        int timeout = initialTimeout;
+        byte[] sendData = message.getBytes();
+        byte[] receiveData = new byte[MAX_PACKET_SIZE];
+
+        for (int i = 0; i < MAX_RETRIES; i++) {
+            try {
+                // Send message
+                DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, address, port);
+                socket.send(sendPacket);
+
+                // Set timeout and receive response
+                socket.setSoTimeout(timeout);
+                DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                socket.receive(receivePacket);
+                return new String(receivePacket.getData(), 0, receivePacket.getLength());
+            } catch (SocketTimeoutException e) {
+                System.out.println("Timeout, retrying (" + (i + 1) + "/" + MAX_RETRIES + ")");
+                timeout *= 2; // Exponential backoff
+            }
+        }
+
+        return null; // All retries failed
     }
 }
