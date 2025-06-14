@@ -15,7 +15,7 @@ public class UDPServer {
             System.exit(1);
         }
 
-        int serverPort = Integer.parseInt(args[1]);
+        int serverPort = Integer.parseInt(args[0]);
 
         try (DatagramSocket welcomeSocket = new DatagramSocket(serverPort)) {
             System.out.println("Server started, listening on port: " + serverPort);
@@ -155,5 +155,4 @@ public class UDPServer {
     private static int getRandomDataPort() {
         return DATA_PORT_MIN + random.nextInt(DATA_PORT_MAX - DATA_PORT_MIN + 1);
     }
-    
 }    
