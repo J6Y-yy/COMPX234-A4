@@ -49,13 +49,14 @@ public class UDPClient {
             if (parts[0].equals("ERR")) {
                 System.err.println("Error: " + response);
                 return;
-            } else if (!parts[0].equals("OK")) {
+            } else if (!parts[0].equals("OK") || parts.length < 6) {
                 System.err.println("Invalid response: " + response);
                 return;
             }
 
             long fileSize = Long.parseLong(parts[3]);
-            System.out.println("Downloading file: " + filename + ", size: " + fileSize + " bytes");
+            int dataPort = Integer.parseInt(parts[5]);
+            System.out.println("Downloading file: " + filename + ", size: " + fileSize + " bytes, data port: " + dataPort);
 
             // Create file for writing
             try (RandomAccessFile file = new RandomAccessFile(filename, "rw")) {
@@ -65,7 +66,7 @@ public class UDPClient {
                 while (start <= end) {
                     // Request data chunk
                     String blockRequest = "FILE " + filename + " GET START " + start + " END " + end;
-                    String blockResponse = sendAndReceive(socket, blockRequest, serverAddress, port, INITIAL_TIMEOUT);
+                    String blockResponse = sendAndReceive(socket, blockRequest, serverAddress, dataPort, INITIAL_TIMEOUT);
                     if (blockResponse == null) {
                         System.err.println("Failed to receive response for data block request");
                         continue;
@@ -108,6 +109,15 @@ public class UDPClient {
             }
 
             System.out.println("\nDownload completed: " + filename);
+
+            // Send close request
+            String closeRequest = "FILE " + filename + " CLOSE";
+            String closeResponse = sendAndReceive(socket, closeRequest, serverAddress, dataPort, INITIAL_TIMEOUT);
+            if (closeResponse != null && closeResponse.startsWith("FILE " + filename + " CLOSE_OK")) {
+                System.out.println("Connection closed successfully");
+            } else {
+                System.err.println("Failed to close connection properly");
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -120,18 +130,18 @@ public class UDPClient {
 
         for (int i = 0; i < MAX_RETRIES; i++) {
             try {
-                // Send message
+                // Send a message
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, address, port);
                 socket.send(sendPacket);
 
-                // Set timeout and receive response
+                // Set the timeout and receive the response
                 socket.setSoTimeout(timeout);
                 DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                 socket.receive(receivePacket);
                 return new String(receivePacket.getData(), 0, receivePacket.getLength());
             } catch (SocketTimeoutException e) {
                 System.out.println("Timeout, retrying (" + (i + 1) + "/" + MAX_RETRIES + ")");
-                timeout *= 2; // Exponential backoff
+                timeout *= 2; // Exponential retreat
             }
         }
 

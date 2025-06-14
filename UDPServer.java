@@ -79,8 +79,9 @@ public class UDPServer {
             System.out.println("Data thread started on port: " + dataPort + " for file: " + filename);
 
             byte[] receiveData = new byte[MAX_PACKET_SIZE];
+            boolean connectionClosed = false;
 
-            while (true) {
+            while (!connectionClosed) {
                 // Receive data request
                 DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                 dataSocket.receive(receivePacket);
@@ -88,26 +89,37 @@ public class UDPServer {
 
                 // Parse request
                 String[] parts = request.split(" ");
-                if (parts.length >= 7 && parts[0].equals("FILE") && parts[1].equals(filename) && parts[2].equals("GET")) {
-                    long start = Long.parseLong(parts[4]);
-                    long end = Long.parseLong(parts[6]);
-
-                    try (RandomAccessFile file = new RandomAccessFile(filename, "r")) {
-                        int length = (int) (end - start + 1);
-                        byte[] data = new byte[length];
-                        file.seek(start);
-                        file.readFully(data);
-
-                        // Encode to Base64
-                        String base64Data = Base64.getEncoder().encodeToString(data);
-                        String response = "FILE " + filename + " OK START " + start + " END " + end + " DATA " + base64Data;
-                        byte[] sendData = response.getBytes();
+                if (parts.length >= 3 && parts[0].equals("FILE") && parts[1].equals(filename)) {
+                    if (parts[2].equals("CLOSE")) {
+                        // Handle close request
+                        String closeResponse = "FILE " + filename + " CLOSE_OK";
+                        byte[] sendData = closeResponse.getBytes();
                         DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, clientAddress, clientPort);
                         dataSocket.send(sendPacket);
+                        System.out.println("Connection closed for: " + filename);
+                        connectionClosed = true;
+                    } else if (parts.length >= 7 && parts[2].equals("GET")) {
+                        // Handle data request
+                        long start = Long.parseLong(parts[4]);
+                        long end = Long.parseLong(parts[6]);
 
-                        System.out.println("Sent data block: " + filename + " [" + start + "-" + end + "]");
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                        try (RandomAccessFile file = new RandomAccessFile(filename, "r")) {
+                            int length = (int) (end - start + 1);
+                            byte[] data = new byte[length];
+                            file.seek(start);
+                            file.readFully(data);
+
+                            // Encode to Base64
+                            String base64Data = Base64.getEncoder().encodeToString(data);
+                            String response = "FILE " + filename + " OK START " + start + " END " + end + " DATA " + base64Data;
+                            byte[] sendData = response.getBytes();
+                            DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, clientAddress, clientPort);
+                            dataSocket.send(sendPacket);
+
+                            System.out.println("Sent data block: " + filename + " [" + start + "-" + end + "]");
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
@@ -115,4 +127,4 @@ public class UDPServer {
             e.printStackTrace();
         }
     }
-}
+}    
